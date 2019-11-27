@@ -81,10 +81,21 @@ export const simplify = (document: any): TransformedSchema => {
     const transformSequenceElement = (element: any): NamedProperty<Property> => {
         const {type, name, maxOccurs, minOccurs} = element.$
         if (typeof maxOccurs === "undefined" || maxOccurs == 1) {
+            const convertedType = convertXSDTypeToTs(type)
+            const match = convertedType.match(/^ArrayOf([a-zA-Z]+)$/)
+            if (match) {
+                return {
+                    name,
+                    type: "array",
+                    items: {
+                        type: convertXSDTypeToTs(match[1])
+                    }
+                }
+            }
             return {
                 name,
-                type: convertXSDTypeToTs(type),
-                nullable: typeof minOccurs !== "undefined" || minOccurs == 0
+                type: convertedType,
+                nullable: typeof minOccurs !== "undefined" && minOccurs == 0
             }
         } else {
             return {
@@ -129,6 +140,43 @@ export const simplify = (document: any): TransformedSchema => {
                 }
 
                 return {name, properties, base: convertXSDTypeToTs(extension.$.base)}
+            } else {
+                throw new Error(`Expected <complexContent> to contain <extension>, got: ${JSON.stringify(complexContent, undefined, 2)}`)
+            }
+        } else {
+            return {name, properties: []}
+        }
+    }
+
+    // @ts-ignore
+    const transformElements = (element: any): ComplexType => {
+        const {name} = element.$
+        if (typeof element[xsdPrefix("complexType")] !== "undefined") {
+            const declaration = element[xsdPrefix("complexType")][0]
+            if (typeof declaration[xsdPrefix("sequence")] !== "undefined") {
+                const sequence = declaration[xsdPrefix("sequence")][0]
+
+                return {
+                    name,
+                    properties: transformSequence(sequence)
+                }
+            } else if (typeof declaration[xsdPrefix("complexContent")] !== "undefined") {
+                const complexContent = declaration[xsdPrefix("complexContent")][0]
+                if (complexContent[xsdPrefix("extension")]) {
+                    const extension = complexContent[xsdPrefix("extension")][0]
+
+                    let properties: NamedProperty<Property>[] = []
+                    if (extension[xsdPrefix("sequence")]) {
+                        const sequence = extension[xsdPrefix("sequence")][0]
+                        properties = transformSequence(sequence)
+                    }
+
+                    return {name, properties, base: convertXSDTypeToTs(extension.$.base)}
+                } else {
+                    throw new Error(`Expected <complexContent> to contain <extension>, got: ${JSON.stringify(complexContent, undefined, 2)}`)
+                }
+            } else {
+                return {name, properties: []}
             }
         } else {
             return {name, properties: []}
@@ -146,6 +194,10 @@ export const simplify = (document: any): TransformedSchema => {
 
     if (typeof schema[xsdPrefix("simpleType")] !== "undefined") {
         transformedSchema.simpleTypes = schema[xsdPrefix("simpleType")].map(transformSimpleType)
+    }
+
+    if (typeof schema[xsdPrefix("element")] !== "undefined") {
+        transformedSchema.complexTypes = transformedSchema.complexTypes.concat(schema[xsdPrefix("element")].map(transformElements))
     }
 
     return transformedSchema

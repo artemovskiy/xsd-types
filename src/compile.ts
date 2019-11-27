@@ -17,11 +17,14 @@ export const compile = (path: string) => async (schema: TransformedSchema) => {
                 property => (property.type == "array"
                         ? {
                             name: property.name,
-                            type: `Array<${(property as ArrayProperty).items.type}>`
+                            type: `Array<${(property as ArrayProperty).items.type}>`,
+                            hasQuestionToken: property.nullable
+
                         }
                         : {
                             name: property.name,
-                            type: property.type
+                            type: property.type,
+                            hasQuestionToken: property.nullable
                         }
                 )
             ),
